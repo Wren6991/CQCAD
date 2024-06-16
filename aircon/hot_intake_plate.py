@@ -75,7 +75,7 @@ class Feature:
         else:
             return self.positive - self.negative
 
-def plate():
+def plate_base():
     positive = (
         cq.Workplane("XY")
         .rect(plate_width, plate_height)
@@ -187,8 +187,8 @@ def magnet_holes():
         .extrude(magnet_hole_depth)
     )
 
-result = (
-    plate()
+plate = (
+    plate_base()
     .combine(tabs())
     .combine(hose_cutout())
     .combine(snap_fits(top_snap_width, top_snap_pitch, top_snap_count, plate_height / 2, 0))
@@ -198,5 +198,9 @@ result = (
     .resolve()
 )
 
-show_object(result)
-cq.exporters.export(result, "hot_intake_plate.stl")
+if "show_object" in globals(): show_object(plate)
+# Flip for correct print orientation. Note you will need tree supports for the
+# overhangs on the snaps and tabs. I recommend increasing line width for the
+# top/bottom skin to reduce print time. Test print was on K1 Max.
+plate = plate.rotate((0, 0, 0), (1, 0, 0), 180)
+cq.exporters.export(plate, "hot_intake_plate.stl")
