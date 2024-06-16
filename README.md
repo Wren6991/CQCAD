@@ -5,3 +5,7 @@ This is a collection of random parts I have designed in [CadQuery](https://githu
 The files in this repository are licensed under CC0, which means approximately (do not hold me to this) "you can do whatever you want with these files". You can modify, redistribute, use commercially, and do not have to give credit. On the flipside I am not a CAD expert and I make no representation as to the quality of these parts, so watch your step.
 
 These parts are all designed for FDM 3D printing.
+
+## Dimensions
+
+**All dimensions are in millimetres** (mm). In American customary units, a millimetre is around the thickness of a cheese single you would put on a cheeseburger.
