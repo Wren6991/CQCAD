@@ -1,4 +1,5 @@
 import cadquery as cq
+import os
 
 # All dimensions in mm
 plate_width            = 255
@@ -203,4 +204,10 @@ if "show_object" in globals(): show_object(plate)
 # overhangs on the snaps and tabs. I recommend increasing line width for the
 # top/bottom skin to reduce print time. Test print was on K1 Max.
 plate = plate.rotate((0, 0, 0), (1, 0, 0), 180)
-cq.exporters.export(plate, "hot_intake_plate.stl")
+
+# Workaround issue with fstl reading the file mid-rewrite
+def safe_write_stl(obj, fname):
+    cq.exporters.export(obj, fname + ".tmp", exportType="STL")
+    os.replace(fname + ".tmp", fname)
+
+safe_write_stl(plate, "hot_intake_plate.stl")
