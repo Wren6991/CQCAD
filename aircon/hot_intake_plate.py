@@ -1,4 +1,5 @@
 import cadquery as cq
+import math
 import os
 
 # All dimensions in mm
@@ -22,8 +23,8 @@ top_snap_width         = 10
 top_snap_side_relief   = 2.1
 top_snap_thickness     = 1.1
 top_snap_inset         = 1.0
-top_snap_freeboard     = 2.2
-top_snap_lip_step      = 1.4 # Measured at 1.0
+top_snap_freeboard     = 2.4
+top_snap_lip_step      = 1.6 # Measured at 1.0
 top_snap_lip_height    = 3.5 # Measured at 3.5
 top_snap_pitch         = 160
 top_snap_count         = 2
@@ -35,14 +36,20 @@ hose_groove_diameter   = hose_hole_diameter + 10
 hose_groove_depth      = 2
 hose_screw_ring        = hose_hole_diameter + 25
 hose_screw_count       = 8
-hose_screw_diameter    = 3.1
+hose_screw_loose       = 3.7
+hose_screw_tight       = 3.1
 hose_screw_cb_depth    = 3.1
-hose_screw_cb_diameter = 5.2
+hose_screw_cb_diameter = 5.5
 
 # Magnets for attaching a filter mesh plate inside this backplate:
-magnet_hole_diameter   = 6.3
+magnet_hole_diameter   = 6.5
 magnet_hole_depth      = 3.2
 magnet_hole_edge_inset = 10
+
+fitting_diameter       = hose_screw_ring + 10
+fitting_thread_pitch   = 8
+fitting_thread_crest   = 5
+fitting_length         = fitting_thread_pitch * 4
 
 class Feature:
     
@@ -70,11 +77,36 @@ class Feature:
             union_optional(self.negative, other.negative)
         )
 
+    def invert(self):
+        return Feature(self.negative, self.positive)
+
+    def rotate(self, axis, angle):
+        return Feature(
+            None if self.positive is None else self.positive.rotate((0, 0, 0), axis, angle),
+            None if self.negative is None else self.negative.rotate((0, 0, 0), axis, angle)
+        )
+
+    def translate(self, vec):
+        return Feature(
+            None if self.positive is None else self.positive.translate(vec),
+            None if self.negative is None else self.negative.translate(vec)
+        )
+
+    def translateX(self, x):
+        return self.translate((x, 0, 0))
+
+    def translateY(self, y):
+        return self.translate((0, y, 0))
+
+    def translateZ(self, z):
+        return self.translate((0, 0, z))
+
     def resolve(self):
         if self.negative is None:
             return self.positive
         else:
             return self.positive - self.negative
+
 
 def plate_base():
     positive = (
@@ -147,7 +179,6 @@ def snap_fits(width, pitch, count, centre_to_wall, angle):
 
 def hose_cutout():
     return Feature(
-        None,
         (
             cq.Workplane()
             .circle(hose_hole_diameter / 2)
@@ -160,21 +191,26 @@ def hose_cutout():
             .faces("<Z").chamfer(plate_edge_chamfer)
         ).union(
             cq.Workplane()
-            .workplane(offset=plate_wall_height + plate_bottom_thickness)
+            .workplane(offset=plate_wall_height)
+            .polarArray(hose_screw_ring / 2, 0, 360, hose_screw_count)
+            .circle(hose_screw_loose / 2)
+            .extrude(plate_bottom_thickness)
+            .polarArray(hose_screw_ring / 2, 0, 360, hose_screw_count)
+            .circle(hose_screw_cb_diameter / 2)
+            .extrude(hose_screw_cb_depth)
+        )
+    ).invert()
+
+def hose_interlock_groove():
+    return Feature(
+        None,
+        (
+            cq.Workplane()
             .circle(hose_groove_diameter / 2 + hose_groove_depth)
             .extrude(-hose_groove_depth)
             .circle(hose_groove_diameter / 2 - hose_groove_depth)
             .cutThruAll()
             .faces("<Z").chamfer(hose_groove_depth * 0.9999)
-        ).union(
-            cq.Workplane()
-            .workplane(offset=plate_wall_height)
-            .polarArray(hose_screw_ring / 2, 0, 360, hose_screw_count)
-            .circle(hose_screw_diameter / 2)
-            .extrude(plate_bottom_thickness)
-            .polarArray(hose_screw_ring / 2, 0, 360, hose_screw_count)
-            .circle(hose_screw_cb_diameter / 2)
-            .extrude(hose_screw_cb_depth)
         )
     )
 
@@ -192,6 +228,7 @@ plate = (
     plate_base()
     .combine(tabs())
     .combine(hose_cutout())
+    .combine(hose_interlock_groove().translateZ(plate_wall_height + plate_bottom_thickness))
     .combine(snap_fits(top_snap_width, top_snap_pitch, top_snap_count, plate_height / 2, 0))
     .combine(snap_fits(side_snap_width, 1, 1, plate_width / 2, 90))
     .combine(snap_fits(side_snap_width, 1, 1, plate_width / 2, -90))
@@ -199,6 +236,61 @@ plate = (
     .resolve()
 )
 
+def fitting_base():
+    ring_thickness = (fitting_diameter - hose_hole_diameter) / 2
+    return Feature(
+        (
+            cq.Workplane("XY")
+            .circle(fitting_diameter / 2)
+            .extrude(fitting_length)
+            .faces("<Z")
+            .chamfer(min(fitting_length, ring_thickness * 0.7))
+            .circle(hose_hole_diameter / 2)
+            .cutThruAll()
+            .faces(">Z")
+            .chamfer(ring_thickness * 0.1)
+        ),
+        (
+            cq.Workplane("XY")
+            .circle(hose_hole_diameter / 2 + ring_thickness * 0.1)
+            .extrude(ring_thickness * 0.1)
+            .faces(">Z").chamfer(ring_thickness * 0.0999)
+        )
+    )
+
+def fitting_screw_holes():
+    return Feature(
+        cq.Workplane("XY")
+        .workplane(offset=fitting_length)
+        .polarArray(hose_screw_ring / 2, 0, 360, hose_screw_count)
+        .circle(hose_screw_tight / 2)
+        .extrude(-fitting_length * 0.5)
+    ).invert()
+
+def fitting_thread():
+    unthreaded_length = fitting_thread_pitch * 0.5
+    extrusion_length = fitting_length - fitting_thread_pitch - unthreaded_length
+    n_twists = extrusion_length / fitting_thread_pitch
+
+    r = hose_hole_diameter / 2
+    t = fitting_thread_crest
+    p = fitting_thread_pitch
+    e = t * 0.01
+    
+    return Feature(
+        cq.Workplane("XY")
+        .workplane(offset=unthreaded_length / 2)
+        # .center(hose_hole_diameter / 2, 0)
+        .polyline([
+            (r + e, 0, p * 0.10),
+            (r - t, 0, p * 0.45),
+            (r - t, 0, p * 0.55),
+            (r + e, 0, p * 0.90)
+        ]).close()
+        .twistExtrude(extrusion_length, 360 * n_twists)
+    )
+
+    
 if "show_object" in globals(): show_object(plate)
 # Flip for correct print orientation. Note you will need tree supports for the
 # overhangs on the snaps and tabs. I recommend increasing line width for the
@@ -211,3 +303,13 @@ def safe_write_stl(obj, fname):
     os.replace(fname + ".tmp", fname)
 
 safe_write_stl(plate, "hot_intake_plate.stl")
+
+fitting = (
+    fitting_base()
+    .combine(hose_interlock_groove().rotate((1, 0, 0), 180).translateZ(fitting_length).invert())
+    .combine(fitting_screw_holes())
+    .combine(fitting_thread())
+    .resolve()
+)
+
+safe_write_stl(fitting, "hot_intake_fitting.stl")
