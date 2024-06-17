@@ -109,6 +109,15 @@ class Feature:
             return self.positive - self.negative
 
 
+def combine_features(*varg):
+    accum = Feature(None)
+    for arg in varg:
+        accum = accum.combine(arg)
+    return accum
+
+def resolve_features(*varg):
+    return combine_features(*varg).resolve()
+
 def plate_base():
     positive = (
         cq.Workplane("XY")
@@ -226,16 +235,15 @@ def magnet_holes():
         .extrude(magnet_hole_depth)
     )
 
-plate = (
-    plate_base()
-    .combine(tabs())
-    .combine(hose_cutout())
-    .combine(hose_interlock_groove().translateZ(plate_wall_height + plate_bottom_thickness))
-    .combine(snap_fits(top_snap_width, top_snap_pitch, top_snap_count, plate_height / 2, 0))
-    .combine(snap_fits(side_snap_width, 1, 1, plate_width / 2, 90))
-    .combine(snap_fits(side_snap_width, 1, 1, plate_width / 2, -90))
-    .combine(magnet_holes())
-    .resolve()
+plate = resolve_features(
+    plate_base(),
+    tabs(),
+    hose_cutout(),
+    hose_interlock_groove().translateZ(plate_wall_height + plate_bottom_thickness),
+    snap_fits(top_snap_width, top_snap_pitch, top_snap_count, plate_height / 2, 0),
+    snap_fits(side_snap_width, 1, 1, plate_width / 2, 90),
+    snap_fits(side_snap_width, 1, 1, plate_width / 2, -90),
+    magnet_holes()
 )
 
 def fitting_base():
@@ -292,7 +300,6 @@ def fitting_thread():
     )
 
     
-if "show_object" in globals(): show_object(plate)
 # Flip for correct print orientation. Note you will need tree supports for the
 # overhangs on the snaps and tabs. I recommend increasing line width for the
 # top/bottom skin to reduce print time. Test print was on K1 Max.
@@ -305,12 +312,15 @@ def safe_write_stl(obj, fname):
 
 safe_write_stl(plate, "hot_intake_plate.stl")
 
-fitting = (
-    fitting_base()
-    .combine(hose_interlock_groove().rotate((1, 0, 0), 180).translateZ(fitting_length).invert())
-    .combine(fitting_screw_holes())
-    .combine(fitting_thread())
-    .resolve()
+fitting = resolve_features(
+    fitting_base(),
+    hose_interlock_groove().rotate((1, 0, 0), 180).translateZ(fitting_length).invert(),
+    fitting_screw_holes(),
+    fitting_thread()
 )
 
 safe_write_stl(fitting, "hot_intake_fitting.stl")
+
+if "show_object" in globals():
+    show_object(plate)
+    show_object(fitting.rotate((0, 0, 0), (1, 0, 0), 90).translate((0, 50, -100)), options={"color": "red"})
