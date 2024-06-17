@@ -21,7 +21,7 @@ tab_count              = 3
 # Snap-fits on top edge of plate
 top_snap_width         = 10
 top_snap_side_relief   = 2.1
-top_snap_thickness     = 1.1
+top_snap_thickness     = 1.5
 top_snap_inset         = 1.0
 top_snap_freeboard     = 2.4
 top_snap_lip_step      = 1.6 # Measured at 1.0
@@ -34,8 +34,8 @@ side_snap_width        = 6.8
 hose_hole_diameter     = 150
 hose_groove_diameter   = hose_hole_diameter + 10
 hose_groove_depth      = 2
-hose_screw_ring        = hose_hole_diameter + 25
-hose_screw_count       = 8
+hose_screw_ring        = hose_hole_diameter + 20
+hose_screw_count       = 6
 hose_screw_loose       = 3.7
 hose_screw_tight       = 3.1
 hose_screw_cb_depth    = 3.1
@@ -49,7 +49,8 @@ magnet_hole_edge_inset = 10
 fitting_diameter       = hose_screw_ring + 10
 fitting_thread_pitch   = 8
 fitting_thread_crest   = 5
-fitting_length         = fitting_thread_pitch * 4
+fitting_length         = fitting_thread_pitch * 3.5
+fitting_lefthanded     = False
 
 class Feature:
     
@@ -178,15 +179,16 @@ def snap_fits(width, pitch, count, centre_to_wall, angle):
 
 
 def hose_cutout():
+    plate_hole_diameter = hose_hole_diameter - fitting_thread_crest
     return Feature(
         (
             cq.Workplane()
-            .circle(hose_hole_diameter / 2)
+            .circle(plate_hole_diameter / 2)
             .extrude(plate_wall_height + plate_bottom_thickness)
         ).union(
             cq.Workplane()
             .workplane(offset=plate_wall_height + plate_bottom_thickness)
-            .circle(hose_hole_diameter / 2 + plate_edge_chamfer)
+            .circle(plate_hole_diameter / 2 + plate_edge_chamfer)
             .extrude(-plate_edge_chamfer - 0.0001)
             .faces("<Z").chamfer(plate_edge_chamfer)
         ).union(
@@ -268,7 +270,7 @@ def fitting_screw_holes():
     ).invert()
 
 def fitting_thread():
-    unthreaded_length = fitting_thread_pitch * 0.5
+    unthreaded_length = fitting_thread_pitch * 0.25
     extrusion_length = fitting_length - fitting_thread_pitch - unthreaded_length
     n_twists = extrusion_length / fitting_thread_pitch
 
@@ -280,14 +282,13 @@ def fitting_thread():
     return Feature(
         cq.Workplane("XY")
         .workplane(offset=unthreaded_length / 2)
-        # .center(hose_hole_diameter / 2, 0)
         .polyline([
-            (r + e, 0, p * 0.10),
+            (r + e, 0, p * 0.08),
             (r - t, 0, p * 0.45),
             (r - t, 0, p * 0.55),
-            (r + e, 0, p * 0.90)
+            (r + e, 0, p * 0.92)
         ]).close()
-        .twistExtrude(extrusion_length, 360 * n_twists)
+        .twistExtrude(extrusion_length, (-360 if fitting_lefthanded else 360) * n_twists)
     )
 
     
