@@ -52,6 +52,22 @@ fitting_thread_crest   = 5
 fitting_length         = fitting_thread_pitch * 3.5
 fitting_lefthanded     = False
 
+filter_clearance      = 1
+filter_width          = plate_width - 2 * (filter_clearance + plate_wall_thickness)
+filter_height         = plate_height - 2 * (filter_clearance + plate_wall_thickness)
+filter_edge_thickness = plate_wall_height - 1
+filter_edge_width     = magnet_hole_diameter * 1.5
+filter_rib_thickness  = filter_edge_thickness / 2
+filter_rib_width      = filter_rib_thickness
+filter_thickness      = 0.8
+filter_line_width     = 0.5 # Set to extruder line width
+filter_line_thickness = 0.2 # Set to layer height
+filter_line_pitch     = 2 * filter_line_width
+filter_zones          = 3
+filter_corner_radius  = max(2, plate_corner_radius - plate_wall_thickness)
+filter_bottom_chamfer = max(1, plate_edge_chamfer - plate_wall_thickness)
+filter_top_chamfer    = 1
+
 def plate_base():
     positive = (
         cq.Workplane("XY")
@@ -161,13 +177,11 @@ def hose_interlock_groove():
 
 def magnet_holes():
     return Feature(
-        None,
         cq.Workplane("XY")
-        .workplane(offset=plate_wall_height)
         .rarray((plate_width - 2 * magnet_hole_edge_inset) / 2, (plate_height - 2 * magnet_hole_edge_inset) / 2, 3, 3)
         .circle(magnet_hole_diameter / 2)
         .extrude(magnet_hole_depth)
-    )
+    ).invert()
 
 plate = resolve_features(
     plate_base(),
@@ -177,7 +191,7 @@ plate = resolve_features(
     snap_fits(top_snap_width, top_snap_pitch, top_snap_count, plate_height / 2, 0),
     snap_fits(side_snap_width, 1, 1, plate_width / 2, 90),
     snap_fits(side_snap_width, 1, 1, plate_width / 2, -90),
-    magnet_holes()
+    magnet_holes().translateZ(plate_wall_height)
 )
 
 def fitting_base():
@@ -220,7 +234,7 @@ def fitting_thread():
     t = fitting_thread_crest
     p = fitting_thread_pitch
     e = t * 0.01
-    
+
     return Feature(
         cq.Workplane("XY")
         .workplane(offset=unthreaded_length / 2)
@@ -232,7 +246,54 @@ def fitting_thread():
         ]).close()
         .twistExtrude(extrusion_length, (-360 if fitting_lefthanded else 360) * n_twists)
     )
-    
+
+def filter_plate():
+    zone_spacing_x = (filter_width  - 2 * filter_edge_width + filter_rib_width) / filter_zones
+    zone_spacing_y = (filter_height - 2 * filter_edge_width + filter_rib_width) / filter_zones
+    base = (
+        cq.Workplane("XY")
+        .rect(filter_width, filter_height)
+        .extrude(filter_edge_thickness)
+        .edges("|Z").fillet(filter_corner_radius)
+        .faces(">Z").chamfer(filter_top_chamfer)
+        .rect(filter_width - 2 * filter_edge_width, filter_height - 2 * filter_edge_width)
+        .cutThruAll()
+        .faces("<Z").chamfer(filter_bottom_chamfer)
+    ).union(
+        cq.Workplane("XY")
+        .workplane(offset=filter_edge_thickness - filter_rib_thickness)
+        .rarray(zone_spacing_x, 1, filter_zones - 1, 1)
+        .rect(filter_rib_width, filter_height - 2 * filter_edge_width)
+        .extrude(filter_rib_thickness)
+        .rarray(1, zone_spacing_y, 1, filter_zones - 1)
+        .rect(filter_width - 2 * filter_edge_width, filter_rib_width)
+        .extrude(filter_rib_thickness)
+        .faces("<Z").chamfer(filter_top_chamfer)
+    )
+    base = base - magnet_holes().invert().resolve()
+    count_x = round((filter_width - 2 * filter_edge_width) / filter_line_pitch)
+    count_y = round((filter_height - 2 * filter_line_width) / filter_line_pitch)
+    for layer in range(round(filter_thickness / filter_line_thickness)):
+        # The epsilon here is to prevent the layers from touching, as that makes
+        # the CSG engine shit the bed
+        base = base.faces(">Z").workplane(offset=-layer * filter_line_thickness * 1.001)
+        if layer % 2 == 0:
+            base = (
+                base
+                .rarray(filter_line_pitch, 1, count_x, 1)
+                .rect(filter_line_width, filter_height - 2 * filter_edge_width)
+                .extrude(-filter_line_thickness)
+            )
+        else:
+            base = (
+                base
+                .rarray(1, filter_line_pitch, 1, count_y)
+                .rect(filter_width - 2 * filter_edge_width, filter_line_width)
+                .extrude(-filter_line_thickness)
+            )
+
+    return base
+
 # Flip for correct print orientation. Note you will need tree supports for the
 # overhangs on the snaps and tabs. I recommend increasing line width for the
 # top/bottom skin to reduce print time. Test print was on K1 Max.
@@ -249,6 +310,11 @@ fitting = resolve_features(
 
 safe_write_stl(fitting, "hot_intake_fitting.stl")
 
+filter = filter_plate()
+
+safe_write_stl(filter, "hot_intake_filter.stl")
+
 if "show_object" in globals():
     show_object(plate)
-    show_object(fitting.rotate((0, 0, 0), (1, 0, 0), 90).translate((0, 50, -100)), options={"color": "red"})
+    show_object(fitting.rotate((0, 0, 0), (1, 0, 0), 0).translate((0, 0, -100)), options={"color": "red"})
+    show_object(filter.translate((0, 0, 100)), options={"color": "blue"})
