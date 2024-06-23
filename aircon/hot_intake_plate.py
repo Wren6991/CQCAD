@@ -41,32 +41,30 @@ hose_screw_tight       = 3.1
 hose_screw_cb_depth    = 3.1
 hose_screw_cb_diameter = 5.5
 
-# Magnets for attaching a filter mesh plate inside this backplate:
-magnet_hole_diameter   = 6.5
-magnet_hole_depth      = 3.2
-magnet_hole_edge_inset = 10
-
 fitting_diameter       = hose_screw_ring + 10
-fitting_thread_pitch   = 8
+fitting_thread_pitch   = 10
 fitting_thread_crest   = 5
-fitting_length         = fitting_thread_pitch * 3.5
-fitting_lefthanded     = False
+fitting_length         = fitting_thread_pitch * 3
+fitting_lefthanded     = True
 
-filter_clearance      = 1
+filter_clearance      = 0.8
 filter_width          = plate_width - 2 * (filter_clearance + plate_wall_thickness)
 filter_height         = plate_height - 2 * (filter_clearance + plate_wall_thickness)
-filter_edge_thickness = plate_wall_height - 1
-filter_edge_width     = magnet_hole_diameter * 1.5
+filter_edge_thickness = plate_wall_height
+filter_edge_width     = 5
 filter_rib_thickness  = filter_edge_thickness / 2
-filter_rib_width      = filter_rib_thickness
-filter_thickness      = 0.8
+filter_rib_width      = filter_rib_thickness * 0.8
+filter_thickness      = 1.2
 filter_line_width     = 0.5 # Set to extruder line width
 filter_line_thickness = 0.2 # Set to layer height
 filter_line_pitch     = 2 * filter_line_width
-filter_zones          = 3
+filter_zones          = 4
 filter_corner_radius  = max(2, plate_corner_radius - plate_wall_thickness)
 filter_bottom_chamfer = max(1, plate_edge_chamfer - plate_wall_thickness)
 filter_top_chamfer    = 1
+
+# It's pretty slow, so disable it when working on other parts
+generate_filter = True
 
 def plate_base():
     positive = (
@@ -175,14 +173,6 @@ def hose_interlock_groove():
         )
     )
 
-def magnet_holes():
-    return Feature(
-        cq.Workplane("XY")
-        .rarray((plate_width - 2 * magnet_hole_edge_inset) / 2, (plate_height - 2 * magnet_hole_edge_inset) / 2, 3, 3)
-        .circle(magnet_hole_diameter / 2)
-        .extrude(magnet_hole_depth)
-    ).invert()
-
 plate = resolve_features(
     plate_base(),
     tabs(),
@@ -191,7 +181,6 @@ plate = resolve_features(
     snap_fits(top_snap_width, top_snap_pitch, top_snap_count, plate_height / 2, 0),
     snap_fits(side_snap_width, 1, 1, plate_width / 2, 90),
     snap_fits(side_snap_width, 1, 1, plate_width / 2, -90),
-    magnet_holes().translateZ(plate_wall_height)
 )
 
 def fitting_base():
@@ -225,27 +214,18 @@ def fitting_screw_holes():
         .extrude(-fitting_length * 0.5)
     ).invert()
 
+
 def fitting_thread():
     unthreaded_length = fitting_thread_pitch * 0.25
-    extrusion_length = fitting_length - fitting_thread_pitch - unthreaded_length
-    n_twists = extrusion_length / fitting_thread_pitch
-
-    r = hose_hole_diameter / 2
-    t = fitting_thread_crest
-    p = fitting_thread_pitch
-    e = t * 0.01
-
-    return Feature(
-        cq.Workplane("XY")
-        .workplane(offset=unthreaded_length / 2)
-        .polyline([
-            (r + e, 0, p * 0.08),
-            (r - t, 0, p * 0.45),
-            (r - t, 0, p * 0.55),
-            (r + e, 0, p * 0.92)
-        ]).close()
-        .twistExtrude(extrusion_length, (-360 if fitting_lefthanded else 360) * n_twists)
-    )
+    return extruded_thread(
+        fitting_thread_pitch,
+        fitting_thread_crest,
+        hose_hole_diameter,
+        fitting_length - unthreaded_length,
+        lefthanded = fitting_lefthanded,
+        od_flat_fraction = 0.16,
+        id_flat_fraction = 0.1
+    ).translateZ(unthreaded_length / 2)
 
 def filter_plate():
     zone_spacing_x = (filter_width  - 2 * filter_edge_width + filter_rib_width) / filter_zones
@@ -263,32 +243,36 @@ def filter_plate():
         cq.Workplane("XY")
         .workplane(offset=filter_edge_thickness - filter_rib_thickness)
         .rarray(zone_spacing_x, 1, filter_zones - 1, 1)
-        .rect(filter_rib_width, filter_height - 2 * filter_edge_width)
+        .rect(filter_rib_width, filter_height - filter_edge_width)
         .extrude(filter_rib_thickness)
         .rarray(1, zone_spacing_y, 1, filter_zones - 1)
-        .rect(filter_width - 2 * filter_edge_width, filter_rib_width)
+        .rect(filter_width - filter_edge_width, filter_rib_width)
         .extrude(filter_rib_thickness)
         .faces("<Z").chamfer(filter_top_chamfer)
     )
-    base = base - magnet_holes().invert().resolve()
     count_x = round((filter_width - 2 * filter_edge_width) / filter_line_pitch)
     count_y = round((filter_height - 2 * filter_line_width) / filter_line_pitch)
     for layer in range(round(filter_thickness / filter_line_thickness)):
         # The epsilon here is to prevent the layers from touching, as that makes
         # the CSG engine shit the bed
-        base = base.faces(">Z").workplane(offset=-layer * filter_line_thickness * 1.001)
+        offset_z = -layer * filter_line_thickness * 1.01
+        offset_xy = ((layer // 2) % 2) * (filter_line_pitch / 2)
+        # Double pitch on first layer to allow space for line expansion due to build plate z variation
+        layer_factor = 1 + (layer == 0)
+        base = base.faces(">Z").workplane(centerOption="CenterOfBoundBox", offset=offset_z)
+        base = base.center(offset_xy, offset_xy)
         if layer % 2 == 0:
             base = (
                 base
-                .rarray(filter_line_pitch, 1, count_x, 1)
-                .rect(filter_line_width, filter_height - 2 * filter_edge_width)
+                .rarray(filter_line_pitch * layer_factor, 1, count_x // layer_factor, 1)
+                .rect(filter_line_width, filter_height - filter_edge_width)
                 .extrude(-filter_line_thickness)
             )
         else:
             base = (
                 base
-                .rarray(1, filter_line_pitch, 1, count_y)
-                .rect(filter_width - 2 * filter_edge_width, filter_line_width)
+                .rarray(1, filter_line_pitch * layer_factor, 1, count_y // layer_factor)
+                .rect(filter_width - filter_edge_width, filter_line_width)
                 .extrude(-filter_line_thickness)
             )
 
@@ -310,11 +294,11 @@ fitting = resolve_features(
 
 safe_write_stl(fitting, "hot_intake_fitting.stl")
 
-filter = filter_plate()
-
-safe_write_stl(filter, "hot_intake_filter.stl")
+if generate_filter:
+    filter = filter_plate()
+    safe_write_stl(filter, "hot_intake_filter.stl")
 
 if "show_object" in globals():
     show_object(plate)
     show_object(fitting.rotate((0, 0, 0), (1, 0, 0), 0).translate((0, 0, -100)), options={"color": "red"})
-    show_object(filter.translate((0, 0, 100)), options={"color": "blue"})
+    if generate_filter: show_object(filter.translate((0, 0, 100)), options={"color": "blue"})
