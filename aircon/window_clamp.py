@@ -17,7 +17,7 @@ thickness          = 2 # Set to 4x extrusion line width
 height             = 30
 
 screw_loose        = 3.7
-screw_tight        = 3.1
+screw_tight        = 3.0
 screw_block_width  = screw_tight + 2.5
 screw_block_height = 3.5
 screw_block_fillet = thickness / 2
@@ -50,6 +50,7 @@ def c_clip(l4):
 		.polyline(resolve_delta(delta_xy))
 		.offset2D(thickness / 2)
 		.extrude(height)
+		.faces("<Y or >Y").chamfer(thickness * 0.125)
 	).translate((thickness / 2, 0, 0))
 
 def screw_block():
@@ -59,6 +60,7 @@ def screw_block():
 		.rect(screw_block_width, screw_block_height + thickness)
 		.extrude(height)
 		.edges("|Z").fillet(screw_block_fillet)
+		.faces("<Y or >Y").chamfer(thickness * 0.125)
 	)
 
 def clip_screw_hole():
@@ -69,6 +71,10 @@ def clip_screw_hole():
 		.rarray(1, screw_spacing, 1, screw_count)
 		.circle(screw_tight / 2)
 		.extrude(screw_block_height + thickness)
+		.faces("<Y").workplane()
+		.rarray(1, screw_spacing, 1, screw_count)
+		.circle(screw_tight / 2 + 0.3)
+		.extrude(-0.3, taper=45)
 	)
 
 for i, l4 in enumerate(l4_options):
@@ -80,7 +86,7 @@ def clamp_plate():
 	return (
 		cq.Workplane("XZ")
 		.rect(min(l4_options), height, centered=False)
-		.extrude(1.2 + screw_cb_depth)
+		.extrude(4.5 + screw_cb_depth)
 		.edges("|Y").fillet(thickness / 2)
 		.faces("<Y").fillet(thickness / 2)
 		.center(screw_block_width / 2, height / 2)

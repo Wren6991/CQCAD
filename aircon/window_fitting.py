@@ -152,6 +152,9 @@ def fitting_cover():
         .circle(fitting_flange_width + plate_hole_diameter / 2)
         .extrude(fitting_flange_thickness)
         .faces("<Z").chamfer((hose_diameter - fitting_id) / 2)
+        .faces(">Z").workplane()
+        .circle(fitting_id / 2)
+        .cutBlind(-(fitting_flange_thickness - 0.8))
     )
     return resolve_features(
         base,
@@ -171,8 +174,8 @@ safe_write_stl(collar_exhaust, "window_collar_exhaust.stl")
 safe_write_stl(collar_blocked, "window_collar_blocked.stl")
 
 if "show_object" in globals():
-    show_object(fitting_inner)
-    show_object(fitting_outer.rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, 100)))
+    show_object(fitting_inner, options={"color": "red"})
+    show_object(fitting_outer.rotate((0, 0, 0), (1, 0, 0), 180).translate((0, 0, 100)), options={"color": "blue"})
     show_object(collar_intake.translate((0, 0, -100)))
     show_object(collar_exhaust.translate((0, 0, -200)))
     show_object(collar_blocked.translate((0, 0, -300)))
